@@ -1,5 +1,5 @@
 // internal/goboard/goboard.go
-package goboard
+package gogame
 
 import "fmt"
 
@@ -31,22 +31,19 @@ func NewBoard(size int) *GoBoard {
 }
 
 // MakeMove makes a move on the Go board.
-func (board *GoBoard) MakeMove(row int, column int, color StoneColor) {
+func (board *GoBoard) MakeMove(row int, column int, color StoneColor) error {
 	fmt.Println(color, " Stone at row:", row, "column:", column)
-	if isValidMove(row, column, board.Size) {
+	if board.isValidMove(row, column, board.Size) {
 		board.Board[row][column] = color
+		return nil
 	}
+	return fmt.Errorf("invalid move")
 }
 
-// Score calculates and returns the score of the Go board.
-func (board *GoBoard) Score() int {
-	// Implement the scoring logic here
-	return 0
-}
-
-// Helper function to check if a move is valid
-func isValidMove(row, column, size int) bool {
-	return row >= 0 && row < size && column >= 0 && column < size
+// Check if a move is valid
+func (board *GoBoard) isValidMove(row, column, size int) bool {
+	return board.Board[row][column] == EMPTY &&
+		(row >= 0 && row < size && column >= 0 && column < size)
 }
 
 // PrintBoard prints the whole board to the terminal.

@@ -6,13 +6,12 @@ import (
 	"encoding/gob"
 	"fmt"
 	"gogo/internal/api"
-	"gogo/pkg/goboard"
+	"gogo/pkg/gogame"
 	"net"
 	"os"
 	"strings"
+	"time"
 )
-
-var board *goboard.GoBoard
 
 func send_cmd(conn net.Conn, cmd api.Command) error {
 	fmt.Println("Sending command:", cmd)
@@ -27,16 +26,21 @@ func send_cmd(conn net.Conn, cmd api.Command) error {
 	return nil
 }
 
-// Function to receive board updates from the server
-func update_board(conn net.Conn) {
+func update_game(conn net.Conn) (*gogame.GoGame, error) {
+	send_cmd(conn, api.Command{Type: api.GetGame, Data: ""})
+
 	dec := gob.NewDecoder(conn)
-	err := dec.Decode(board)
+
+	// Initialize game before decoding
+	game := &gogame.GoGame{}
+
+	err := dec.Decode(game)
 	if err != nil {
-		fmt.Println("Error decoding the board:", err)
+		return nil, fmt.Errorf("error decoding game: %w", err)
 	} else {
-		fmt.Println("Board decoded successfully!")
-		board.PrintBoard()
+		fmt.Println("Game decoded successfully!")
 	}
+	return game, nil
 }
 
 func main() {
@@ -46,10 +50,10 @@ func main() {
 	}
 
 	// Initialize the board
-	board = &goboard.GoBoard{}
-
 	serverAddr := os.Args[1]
 	playerName := os.Args[2]
+
+	var game *gogame.GoGame
 
 	// Connect to the server
 	conn, err := net.Dial("tcp", serverAddr)
@@ -67,16 +71,27 @@ func main() {
 		os.Exit(1)
 	}
 
+	time.Sleep(1 * time.Second)
+
 	// Get initial board
-	send_cmd(conn, api.Command{Type: api.GetBoard, Data: ""})
-	update_board(conn)
+	game, err = update_game(conn)
+	if err != nil {
+		fmt.Println("Error updating game:", err)
+		os.Exit(1)
+	} else {
+		game.Print()
+	}
 
 	for {
 		cmd := get_cmd_from_console()
 		send_cmd(conn, cmd)
 
-		send_cmd(conn, api.Command{Type: api.GetBoard, Data: ""})
-		update_board(conn)
+		game, err = update_game(conn)
+		if err != nil {
+			fmt.Println("error updating game:", err)
+		}
+
+		game.Print()
 	}
 }
 

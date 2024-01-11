@@ -5,7 +5,7 @@ type CommandType int
 const (
 	Greet CommandType = iota
 	StartGame
-	GetBoard
+	GetGame
 	MakeMove
 	Pass
 	Resign
@@ -16,7 +16,7 @@ var commandNames = map[CommandType]string{
 	MakeMove: "MakeMove", // row, column, color as data
 	Pass:     "Pass",     // no data
 	Resign:   "Resign",   // no data
-	GetBoard: "GetBoard", // no data
+	GetGame:  "GetGame",  // no data
 }
 
 func (c CommandType) String() string {

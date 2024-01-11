@@ -5,12 +5,60 @@ import (
 	"encoding/gob"
 	"fmt"
 	"gogo/internal/api"
-	"gogo/pkg/goboard"
-	"math/rand"
+	"gogo/pkg/gogame"
 	"net"
 	"os"
 	"strconv"
 )
+
+type GameHandler struct {
+	game *gogame.GoGame
+	conn net.Conn
+}
+
+func (gh *GameHandler) handleGreet() {
+	fmt.Println("Got greeted again!?!")
+}
+
+func (gh *GameHandler) handleGetGame() error {
+	// Create a new gob encoder with the connection as the output stream
+	enc := gob.NewEncoder(gh.conn)
+
+	// Encode the board using the gob encoder
+	err := enc.Encode(gh.game)
+	if err != nil {
+		return fmt.Errorf("error encoding board: %w", err)
+	} else {
+		fmt.Println("Board encoded successfully!")
+	}
+	return nil
+}
+
+func (gh *GameHandler) handleMakeMove(cmd api.Command, player string) {
+	// split data at " " to get x and y
+	x, _ := strconv.Atoi(cmd.Data[:1])
+	y, _ := strconv.Atoi(cmd.Data[2:])
+	gh.game.MakeMove(player, x, y)
+}
+
+func (gh *GameHandler) handlePass() {
+	// Handle the Pass command
+}
+
+func (gh *GameHandler) handle_cmd(cmd api.Command, player string) error {
+	// Handle the command based on its type
+	switch cmd.Type {
+	case api.Greet:
+		gh.handleGreet()
+	case api.GetGame:
+		return gh.handleGetGame()
+	case api.MakeMove:
+		gh.handleMakeMove(cmd, player)
+	case api.Pass:
+		gh.handlePass()
+	}
+	return nil
+}
 
 func decodeCommand(conn net.Conn) (api.Command, error) {
 	var cmd api.Command
@@ -45,53 +93,39 @@ func main() {
 		if err != nil {
 			fmt.Println("Error accepting connection:", err)
 		}
-		go handleConnection(conn, goboard.NewBoard(size))
+		go handleConnection(conn)
 	}
 }
 
-func handleConnection(conn net.Conn, board *goboard.GoBoard) {
+func handleConnection(conn net.Conn) {
 	fmt.Println("Someone connected and want to say something!")
 
+	var gameHandler *GameHandler
+	var player string
 	for {
 		cmd, err := decodeCommand(conn)
 		if err != nil {
-			fmt.Println("Failed reciving command:", err)
-			continue
+			fmt.Println("Failed receiving command:", err)
+			break
 		}
 
 		fmt.Println("Received command:", cmd)
 
-		// Handle the command based on its type
-		switch cmd.Type {
-		case api.Greet:
-			fmt.Println("Got greeted!")
-		case api.GetBoard:
-			// Create a new gob encoder with the connection as the output stream
-			enc := gob.NewEncoder(conn)
-
-			// Encode the board using the gob encoder
-			err := enc.Encode(board)
+		if cmd.Type == api.Greet {
+			player = cmd.Data
+			game := gogame.NewGoGame(9, []string{player, "player2"})
+			gameHandler = &GameHandler{game: game, conn: conn}
+			fmt.Println("Got greeted by", cmd.Data)
+		} else {
+			err := gameHandler.handle_cmd(cmd, player)
 			if err != nil {
-				fmt.Println("Error encoding the board:", err)
-			} else {
-				fmt.Println("Board encoded successfully!")
+				fmt.Println("Error handling command:", err)
+				break
 			}
-		case api.MakeMove:
-			// split data at " " to get x and y
-			x, _ := strconv.Atoi(cmd.Data[:1])
-			y, _ := strconv.Atoi(cmd.Data[2:])
-			board.MakeMove(x, y, goboard.WHITE)
-			board.MakeMove(rand.Intn(board.Size), rand.Intn(board.Size), goboard.BLACK)
-
-		case api.Pass:
-			// Handle the Pass command
-		case api.Resign:
-			// Handle the Resign command
-		default:
-			fmt.Println("Received unknown command type:", cmd.Type)
 		}
 
-		// Make a random move between 0 and board size
-		board.PrintBoard()
+		if gameHandler.game != nil {
+			gameHandler.game.Print()
+		}
 	}
 }
