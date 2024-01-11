@@ -2,25 +2,45 @@
 package main
 
 import (
+	"bufio"
 	"encoding/gob"
 	"fmt"
-	"gogo/internal/goboard"
+	"gogo/internal/api"
+	"gogo/pkg/goboard"
 	"net"
 	"os"
+	"strings"
 )
 
-func main() {
-	// Parse the two cmd line arguments.
-	// server address
-	// name of the player
-	// If the number of arguments is not 2, print an error message and exit
-	// If the server address is not valid, print an error message and exit
-	// If the player name is not valid, print an error message and exit
-	// Print the server address and player name
-	// Connect to the server
-	// Send a request to the server with the player name
-	// Print the response from the server
+var board *goboard.GoBoard
 
+// Sends a command to the server and receives the updated board
+func send_cmd(conn net.Conn, cmd api.Command) {
+	fmt.Println("Sending command:", cmd)
+
+	// Create a gob encoder and send the command
+	enc := gob.NewEncoder(conn)
+	err := enc.Encode(&cmd)
+	if err != nil {
+		fmt.Println("Error encoding command:", err)
+		os.Exit(1)
+	}
+
+	// Create a new gob decoder with the connection as the input stream
+	dec := gob.NewDecoder(conn)
+
+	// Decode the board using the gob decoder
+	err = dec.Decode(board)
+
+	if err != nil {
+		fmt.Println("Error decoding the board:", err)
+	} else {
+		fmt.Println("Board decoded successfully!")
+		board.PrintBoard()
+	}
+}
+
+func main() {
 	if len(os.Args) != 3 {
 		fmt.Println("Usage: go run main.go <server address> <player name>")
 		os.Exit(1)
@@ -42,30 +62,33 @@ func main() {
 		defer conn.Close()
 	}
 
-	// Send a request to the server with the player name
-	fmt.Fprint(conn, playerName)
+	send_cmd(conn, api.Command{Type: api.Greet, Data: playerName})
 
-	// Print the response from the server
-	response := make([]byte, 1024)
-	n, err := conn.Read(response)
-	if err != nil {
-		fmt.Println("Error reading from server:", err)
-		os.Exit(1)
-	}
-	fmt.Println("Response from server:", string(response[:n]))
+	reader := bufio.NewReader(os.Stdin)
+	for {
+		fmt.Print("Enter command: ")
+		input, _ := reader.ReadString('\n')
+		input = strings.TrimSpace(input)
 
-	// Create a new gob decoder with the connection as the input stream
-	dec := gob.NewDecoder(conn)
+		parts := strings.SplitN(input, " ", 2)
+		if len(parts) < 2 {
+			fmt.Println("Invalid command, please enter a command in the format 'command data'")
+			continue
+		}
 
-	// Create a new empty goboard
-	board := new(goboard.GoBoard)
+		commandType, ok := api.StringToCommandType(parts[0])
+		if !ok {
+			fmt.Println("Unknown command:", parts[0])
+			continue
+		}
 
-	// Decode the board using the gob decoder
-	err = dec.Decode(board)
-	if err != nil {
-		fmt.Println("Error decoding the board:", err)
-	} else {
-		fmt.Println("Board decoded successfully!")
+		cmd := api.Command{
+			Type: commandType,
+			Data: parts[1],
+		}
+		send_cmd(conn, cmd)
+
+		send_cmd(conn, api.Command{Type: api.GetBoard})
 		board.PrintBoard()
 	}
 }
