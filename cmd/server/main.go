@@ -2,7 +2,6 @@
 package main
 
 import (
-	"bytes"
 	"encoding/gob"
 	"fmt"
 	"gogo/internal/api"
@@ -13,22 +12,13 @@ import (
 	"strconv"
 )
 
-func decodeCommand(conn net.Conn) api.Command {
-	data := make([]byte, 1024)
-	_, err := conn.Read(data)
-	if err != nil {
-		fmt.Println("Error reading data from client:", err)
-		os.Exit(1)
-	}
-
+func decodeCommand(conn net.Conn) (api.Command, error) {
 	var cmd api.Command
-	dec := gob.NewDecoder(bytes.NewReader(data))
-	err = dec.Decode(&cmd)
+	err := gob.NewDecoder(conn).Decode(&cmd)
 	if err != nil {
-		fmt.Println("Error decoding command:", err)
-		os.Exit(1)
+		return api.Command{}, fmt.Errorf("error decoding command: %w", err)
 	}
-	return cmd
+	return cmd, nil
 }
 
 func main() {
@@ -63,14 +53,18 @@ func handleConnection(conn net.Conn, board *goboard.GoBoard) {
 	fmt.Println("Someone connected and want to say something!")
 
 	for {
-		cmd := decodeCommand(conn)
+		cmd, err := decodeCommand(conn)
+		if err != nil {
+			fmt.Println("Failed reciving command:", err)
+			continue
+		}
+
 		fmt.Println("Received command:", cmd)
 
 		// Handle the command based on its type
 		switch cmd.Type {
 		case api.Greet:
 			fmt.Println("Got greeted!")
-			break
 		case api.GetBoard:
 			// Create a new gob encoder with the connection as the output stream
 			enc := gob.NewEncoder(conn)
@@ -81,23 +75,23 @@ func handleConnection(conn net.Conn, board *goboard.GoBoard) {
 				fmt.Println("Error encoding the board:", err)
 			} else {
 				fmt.Println("Board encoded successfully!")
-				board.PrintBoard()
 			}
-			break
 		case api.MakeMove:
-			x := int(cmd.Data[0])
-			y := int(cmd.Data[1])
+			// split data at " " to get x and y
+			x, _ := strconv.Atoi(cmd.Data[:1])
+			y, _ := strconv.Atoi(cmd.Data[2:])
 			board.MakeMove(x, y, goboard.WHITE)
+			board.MakeMove(rand.Intn(board.Size), rand.Intn(board.Size), goboard.BLACK)
+
 		case api.Pass:
 			// Handle the Pass command
 		case api.Resign:
 			// Handle the Resign command
-			break
 		default:
 			fmt.Println("Received unknown command type:", cmd.Type)
 		}
 
 		// Make a random move between 0 and board size
-		board.MakeMove(rand.Intn(board.Size), rand.Intn(board.Size), goboard.BLACK)
+		board.PrintBoard()
 	}
 }

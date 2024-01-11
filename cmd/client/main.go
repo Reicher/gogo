@@ -14,24 +14,23 @@ import (
 
 var board *goboard.GoBoard
 
-// Sends a command to the server and receives the updated board
-func send_cmd(conn net.Conn, cmd api.Command) {
+func send_cmd(conn net.Conn, cmd api.Command) error {
 	fmt.Println("Sending command:", cmd)
 
 	// Create a gob encoder and send the command
 	enc := gob.NewEncoder(conn)
 	err := enc.Encode(&cmd)
 	if err != nil {
-		fmt.Println("Error encoding command:", err)
-		os.Exit(1)
+		return fmt.Errorf("error encoding command: %w", err)
 	}
 
-	// Create a new gob decoder with the connection as the input stream
+	return nil
+}
+
+// Function to receive board updates from the server
+func update_board(conn net.Conn) {
 	dec := gob.NewDecoder(conn)
-
-	// Decode the board using the gob decoder
-	err = dec.Decode(board)
-
+	err := dec.Decode(board)
 	if err != nil {
 		fmt.Println("Error decoding the board:", err)
 	} else {
@@ -46,11 +45,11 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Initialize the board
+	board = &goboard.GoBoard{}
+
 	serverAddr := os.Args[1]
 	playerName := os.Args[2]
-
-	fmt.Println("Server address:", serverAddr)
-	fmt.Println("Player name:", playerName)
 
 	// Connect to the server
 	conn, err := net.Dial("tcp", serverAddr)
@@ -62,11 +61,41 @@ func main() {
 		defer conn.Close()
 	}
 
-	send_cmd(conn, api.Command{Type: api.Greet, Data: playerName})
+	err = send_cmd(conn, api.Command{Type: api.Greet, Data: playerName})
+	if err != nil {
+		fmt.Println("Error sending command:", err)
+		os.Exit(1)
+	}
 
+	// Get initial board
+	send_cmd(conn, api.Command{Type: api.GetBoard, Data: ""})
+	update_board(conn)
+
+	for {
+		cmd := get_cmd_from_console()
+		send_cmd(conn, cmd)
+
+		send_cmd(conn, api.Command{Type: api.GetBoard, Data: ""})
+		update_board(conn)
+	}
+}
+
+func get_cmd_from_console() api.Command {
 	reader := bufio.NewReader(os.Stdin)
 	for {
+		// presents all avaiable commands to the user
+		// Present a list of commands to the user
+		// User is then prompted for any data required by the command
+		// The command and data are returned
+
+		fmt.Println("Available commands:")
+		fmt.Println("  Greet <player name>")
+		fmt.Println("  GetBoard")
+		fmt.Println("  MakeMove <row> <column>")
+		fmt.Println("  pass")
+		fmt.Println("  Resign")
 		fmt.Print("Enter command: ")
+
 		input, _ := reader.ReadString('\n')
 		input = strings.TrimSpace(input)
 
@@ -82,13 +111,9 @@ func main() {
 			continue
 		}
 
-		cmd := api.Command{
+		return api.Command{
 			Type: commandType,
 			Data: parts[1],
 		}
-		send_cmd(conn, cmd)
-
-		send_cmd(conn, api.Command{Type: api.GetBoard})
-		board.PrintBoard()
 	}
 }
