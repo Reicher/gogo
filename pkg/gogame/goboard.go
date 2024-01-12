@@ -42,8 +42,8 @@ func (board *GoBoard) MakeMove(row int, column int, color StoneColor) error {
 
 // Check if a move is valid
 func (board *GoBoard) isValidMove(row, column, size int) bool {
-	return board.Board[row][column] == EMPTY &&
-		(row >= 0 && row < size && column >= 0 && column < size)
+	return (row >= 0 && row < size && column >= 0 && column < size) &&
+		board.Board[row][column] == EMPTY
 }
 
 // PrintBoard prints the whole board to the terminal.

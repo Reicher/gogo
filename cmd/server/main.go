@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"gogo/internal/api"
 	"gogo/pkg/gogame"
+	"math/rand"
 	"net"
 	"os"
 	"strconv"
@@ -54,6 +55,11 @@ func (gh *GameHandler) handle_cmd(cmd api.Command, player string) error {
 		return gh.handleGetGame()
 	case api.MakeMove:
 		gh.handleMakeMove(cmd, player)
+		// dummy random move for dumb_ai
+		x := rand.Intn(gh.game.Board.Size)
+		y := rand.Intn(gh.game.Board.Size)
+		cmd := api.Command{Type: api.MakeMove, Data: fmt.Sprintf("%d %d", x, y)}
+		gh.handleMakeMove(cmd, "dumb_ai")
 	case api.Pass:
 		gh.handlePass()
 	}
@@ -111,9 +117,12 @@ func handleConnection(conn net.Conn) {
 
 		fmt.Println("Received command:", cmd)
 
-		if cmd.Type == api.Greet {
+		if gameHandler == nil && cmd.Type == api.Greet {
 			player = cmd.Data
-			game := gogame.NewGoGame(9, []string{player, "player2"})
+			game := gogame.NewGoGame(9, []string{player, "dumb_ai"})
+			if game.MakeMove("dumb_ai", 0, 0) != nil {
+				fmt.Println("Error making move for dumb_ai")
+			}
 			gameHandler = &GameHandler{game: game, conn: conn}
 			fmt.Println("Got greeted by", cmd.Data)
 		} else {
