@@ -6,41 +6,30 @@ import (
 	"encoding/gob"
 	"fmt"
 	"gogo/internal/api"
-	"gogo/pkg/gogame"
 	"net"
 	"os"
 	"strings"
-	"time"
 )
 
-func send_cmd(conn net.Conn, cmd api.Command) error {
+func send_cmd(conn net.Conn, cmd api.Command) (*api.Response, error) {
 	fmt.Println("Sending command:", cmd)
 
 	// Create a gob encoder and send the command
 	enc := gob.NewEncoder(conn)
 	err := enc.Encode(&cmd)
 	if err != nil {
-		return fmt.Errorf("error encoding command: %w", err)
+		return nil, fmt.Errorf("error encoding command: %w", err)
 	}
 
-	return nil
-}
-
-func update_game(conn net.Conn) (*gogame.GoGame, error) {
-	send_cmd(conn, api.Command{Type: api.GetGame, Data: ""})
-
+	// Create a gob decoder and decode the response
 	dec := gob.NewDecoder(conn)
-
-	// Initialize game before decoding
-	game := &gogame.GoGame{}
-
-	err := dec.Decode(game)
+	var response api.Response
+	err = dec.Decode(&response)
 	if err != nil {
-		return nil, fmt.Errorf("error decoding game: %w", err)
-	} else {
-		fmt.Println("Game decoded successfully!")
+		return nil, fmt.Errorf("error decoding response: %w", err)
 	}
-	return game, nil
+
+	return &response, nil
 }
 
 func main() {
@@ -53,7 +42,7 @@ func main() {
 	serverAddr := os.Args[1]
 	playerName := os.Args[2]
 
-	var game *gogame.GoGame
+	var response *api.Response
 
 	// Connect to the server
 	conn, err := net.Dial("tcp", serverAddr)
@@ -65,33 +54,30 @@ func main() {
 		defer conn.Close()
 	}
 
-	err = send_cmd(conn, api.Command{Type: api.Greet, Data: playerName})
+	// Send the greet command to initialize the game
+	response, err = send_cmd(conn, api.Command{Type: api.Greet, Data: playerName})
 	if err != nil {
 		fmt.Println("Error sending command:", err)
 		os.Exit(1)
 	}
 
-	time.Sleep(1 * time.Second)
-
-	// Get initial board
-	game, err = update_game(conn)
-	if err != nil {
-		fmt.Println("Error updating game:", err)
-		os.Exit(1)
-	} else {
-		game.Print()
-	}
+	// Print the response
+	fmt.Println("Response:", response.Data)
+	response.Game.Print()
 
 	for {
 		cmd := get_cmd_from_console()
-		send_cmd(conn, cmd)
 
-		game, err = update_game(conn)
+		// clear the screen
+		fmt.Print("\033[H\033[2J")
+		response, err = send_cmd(conn, cmd)
+		fmt.Println("Response:", response.Data)
+
 		if err != nil {
-			fmt.Println("error updating game:", err)
+			fmt.Println("Error sending command:", err)
+			os.Exit(1)
 		}
-
-		game.Print()
+		response.Game.Print()
 	}
 }
 
@@ -105,9 +91,8 @@ func get_cmd_from_console() api.Command {
 
 		fmt.Println("Available commands:")
 		fmt.Println("  Greet <player name>")
-		fmt.Println("  GetBoard")
 		fmt.Println("  MakeMove <row> <column>")
-		fmt.Println("  pass")
+		fmt.Println("  Pass")
 		fmt.Println("  Resign")
 		fmt.Print("Enter command: ")
 

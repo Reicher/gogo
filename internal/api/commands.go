@@ -1,5 +1,9 @@
 package api
 
+import (
+	"gogo/pkg/gogame"
+)
+
 type CommandType int
 
 const (
@@ -35,4 +39,18 @@ func StringToCommandType(s string) (CommandType, bool) {
 type Command struct {
 	Type CommandType
 	Data string
+}
+
+type ResponseType int
+
+const (
+	Ok ResponseType = iota
+	Err
+	Game
+)
+
+type Response struct {
+	Type ResponseType
+	Data string
+	Game *gogame.GoGame
 }
