@@ -8,12 +8,34 @@ import (
 	"gogo/pkg/gogame"
 	"math/rand"
 	"net"
-	"strconv"
 )
 
 type GameHandler struct {
-	game *gogame.GoGame
-	conn net.Conn
+	Game   *gogame.GoGame
+	Player map[gogame.StoneColor]Player
+	conn   net.Conn
+}
+
+func (gh *GameHandler) add_player(player Player) {
+	// Will be ran several times, randomize if no players in Player, else add free color to player
+	if len(gh.Player) == 0 {
+		// Initialize Player map
+		gh.Player = make(map[gogame.StoneColor]Player)
+
+		// Randomize color
+		if rand.Intn(2) == 0 {
+			gh.Player[gogame.BLACK] = player
+		} else {
+			gh.Player[gogame.WHITE] = player
+		}
+	} else {
+		// if first color is taken, assign the other
+		if _, ok := gh.Player[gogame.BLACK]; ok {
+			gh.Player[gogame.WHITE] = player
+		} else {
+			gh.Player[gogame.BLACK] = player
+		}
+	}
 }
 
 func (gh *GameHandler) send_response(response api.Response) error {
@@ -28,61 +50,4 @@ func (gh *GameHandler) send_response(response api.Response) error {
 		fmt.Println("Response encoded successfully!")
 	}
 	return nil
-}
-
-func (gh *GameHandler) handleGreet() {
-	fmt.Println("Got greeted again!?!")
-}
-
-func (gh *GameHandler) handleMakeMove(cmd api.Command, player string) error {
-	// split data at " " to get x and y
-	x, _ := strconv.Atoi(cmd.Data[:1])
-	y, _ := strconv.Atoi(cmd.Data[2:])
-	return gh.game.MakeMove(player, x, y)
-}
-
-func (gh *GameHandler) handlePass() {
-	// Handle the Pass command
-}
-
-func (gh *GameHandler) handle_cmd(cmd api.Command, player string) error {
-	// Handle the command based on its type
-	var err error = nil
-	var response api.Response
-
-	switch cmd.Type {
-	case api.Greet:
-		gh.handleGreet()
-		// send a OK response
-		greeting := fmt.Sprintf("Welcome %s!", cmd.Data)
-		response = api.Response{Type: api.Ok, Data: greeting, Game: gh.game}
-		err = gh.send_response(response)
-		if err != nil {
-			return fmt.Errorf("error sending response: %w", err)
-		}
-	case api.MakeMove:
-		err = gh.handleMakeMove(cmd, player)
-		if err != nil {
-			// send a Err response
-			response = api.Response{Type: api.Err, Data: err.Error(), Game: gh.game}
-			err = gh.send_response(response)
-			if err != nil {
-				return fmt.Errorf("error sending response: %w", err)
-			}
-			return fmt.Errorf("error making move: %w", err)
-		}
-
-		// dummy random move for dumb_ai
-		x := rand.Intn(gh.game.Board.Size)
-		y := rand.Intn(gh.game.Board.Size)
-		cmd := api.Command{Type: api.MakeMove, Data: fmt.Sprintf("%d %d", x, y)}
-		gh.handleMakeMove(cmd, "dumb_ai")
-
-		// send a OK response
-		response = api.Response{Type: api.Ok, Data: "Move made successfully!", Game: gh.game}
-		err = gh.send_response(response)
-	case api.Pass:
-		gh.handlePass()
-	}
-	return err
 }

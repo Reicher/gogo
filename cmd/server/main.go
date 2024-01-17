@@ -2,25 +2,14 @@
 package main
 
 import (
-	"encoding/gob"
 	"fmt"
 	"gogo/internal/api"
 	"gogo/pkg/gogame"
 	"net"
 	"os"
-	"strconv"
 )
 
 func main() {
-	// Default board size
-	size := 9
-
-	// Check if a command-line argument for size is provided
-	if len(os.Args) > 1 {
-		size, _ = strconv.Atoi(os.Args[1])
-	}
-	fmt.Println("Using board size:", size)
-
 	// Start listening for connections
 	listener, err := net.Listen("tcp", ":8080")
 	if err != nil {
@@ -39,49 +28,65 @@ func main() {
 	}
 }
 
-func decodeCommand(conn net.Conn) (api.Command, error) {
-	var cmd api.Command
-	err := gob.NewDecoder(conn).Decode(&cmd)
+func handle_init_request(init_data string, conn net.Conn) (*GameHandler, error) {
+	var initData api.InitRequest
+	err := initData.UnmarshalJSON([]byte(init_data))
 	if err != nil {
-		return api.Command{}, fmt.Errorf("error decoding command: %w", err)
+		fmt.Println("Error unmarshalling request:", err)
 	}
-	return cmd, nil
+
+	// extract name and create Human player
+	player1 := Human{Conn: conn, Name: initData.Player}
+	game := gogame.NewGoGame(initData.Size)
+
+	// create a ai-game
+	if initData.HumanOpponent {
+		return nil, fmt.Errorf("Human opponent not implemented yet")
+	}
+
+	// create game handler
+	gamehandler := GameHandler{Game: game, conn: conn}
+	gamehandler.add_player(&player1)
+	gamehandler.add_player(&AI{})
+
+	// send response
+	greeting := fmt.Sprintf("Welcome %s!", initData.Player)
+	response := api.Response{Type: api.Ok, Data: greeting, Game: game}
+	err = gamehandler.send_response(response)
+	if err != nil {
+		return nil, fmt.Errorf("error sending response: %w", err)
+	}
+
+	return &gamehandler, nil
 }
 
 func handleConnection(conn net.Conn) {
 	var gameHandler *GameHandler
-	var player string
-	for {
-		cmd, err := decodeCommand(conn)
+
+	// Handle init request
+	cmd, err := decodeRequest(conn)
+	if err != nil {
+		fmt.Println("Failed receiving request:", err)
+		os.Exit(1)
+	}
+	if cmd.Type == api.FindGame {
+		gameHandler, err = handle_init_request(cmd.Data, conn)
 		if err != nil {
-			fmt.Println("Failed receiving command:", err)
-			break
+			fmt.Println("Error handling init request:", err)
+			os.Exit(1)
 		}
-		fmt.Println("Received command:", cmd)
+	} else {
+		fmt.Println("Error: First request must be of type FindGame")
+		os.Exit(1)
+	}
 
-		// Always handle greet first to get the player name and initialize the game handler
-		if gameHandler == nil && cmd.Type == api.Greet {
-			player = cmd.Data
-			game := gogame.NewGoGame(9, []string{player, "dumb_ai"})
-			if game.MakeMove("dumb_ai", 0, 0) != nil {
-				fmt.Println("Error making move for dumb_ai")
-			}
-			gameHandler = &GameHandler{game: game, conn: conn}
-			fmt.Println("Got greeted by", cmd.Data)
-
-			// send a OK response
-			greeting := fmt.Sprintf("Welcome %s!", cmd.Data)
-			response := api.Response{Type: api.Ok, Data: greeting, Game: gameHandler.game}
-			err = gameHandler.send_response(response)
-			if err != nil {
-				fmt.Errorf("error sending response: %w", err)
-			}
-		} else {
-			err := gameHandler.handle_cmd(cmd, player)
-			if err != nil {
-				fmt.Println("Error handling command:", err)
-				break
-			}
+	// Main game loop
+	for {
+		next_player := gameHandler.Player[gameHandler.Game.Turn]
+		err = next_player.DoMove(*gameHandler, conn)
+		if err != nil {
+			fmt.Println("Error making move:", err)
+			os.Exit(1)
 		}
 	}
 }

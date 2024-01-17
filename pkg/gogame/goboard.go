@@ -31,7 +31,7 @@ func NewBoard(size int) *GoBoard {
 }
 
 // MakeMove makes a move on the Go board.
-func (board *GoBoard) MakeMove(row int, column int, color StoneColor) error {
+func (board *GoBoard) PutStone(row int, column int, color StoneColor) error {
 	fmt.Println(color, " Stone at row:", row, "column:", column)
 	if board.isValidMove(row, column, board.Size) {
 		board.Board[row][column] = color
