@@ -72,7 +72,7 @@ func main() {
 	// Initialize the board
 	serverAddr := os.Args[1]
 	playerName := os.Args[2]
-	human_opponent := false
+	human_opponent := true
 
 	var response *api.Response
 

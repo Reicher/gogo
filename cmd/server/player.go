@@ -11,7 +11,9 @@ import (
 
 type Player interface {
 	GetName() string
-	DoMove(gh GameHandler, conn net.Conn) error
+	DoMove(game ) error
+	IsHuman() bool
+	GetConn() net.Conn
 }
 
 type Human struct {
@@ -19,17 +21,17 @@ type Human struct {
 	Name string
 }
 
-func decodeRequest(conn net.Conn) (api.Request, error) {
+func (h *Human) decodeRequest() (api.Request, error) {
 	var cmd api.Request
-	err := gob.NewDecoder(conn).Decode(&cmd)
+	err := gob.NewDecoder(h.Conn).Decode(&cmd)
 	if err != nil {
 		return api.Request{}, fmt.Errorf("error decoding request: %w", err)
 	}
 	return cmd, nil
 }
 
-func (h *Human) DoMove(gh GameHandler, conn net.Conn) error {
-	request, err := decodeRequest(conn)
+func (h *Human) DoMove(game) error {
+	request, err := h.decodeRequest()
 
 	if err != nil {
 		fmt.Println("Failed receiving request:", err)
@@ -37,11 +39,11 @@ func (h *Human) DoMove(gh GameHandler, conn net.Conn) error {
 	if request.Type == api.Place {
 		x, _ := strconv.Atoi(request.Data[:1])
 		y, _ := strconv.Atoi(request.Data[2:])
-		err = gh.Game.MakeMove(gh.Game.Turn, x, y)
+		err = game.MakeMove(game.Turn, x, y)
 		if err != nil {
 			// send a Err response
 			response := api.Response{Type: api.Err, Data: err.Error(), Game: gh.Game}
-			err_response := gh.send_response(response)
+			err_response := SendResponse(h.Conn, response)
 			if err_response != nil {
 				return fmt.Errorf("error sending response: %w on error making move: %w", err_response, err)
 			}
@@ -49,7 +51,7 @@ func (h *Human) DoMove(gh GameHandler, conn net.Conn) error {
 		}
 		// send a Ok response
 		response := api.Response{Type: api.Ok, Data: "Move Ok", Game: gh.Game}
-		err_response := gh.send_response(response)
+		err_response := SendResponse(h.Conn, response)
 		if err_response != nil {
 			return fmt.Errorf("error sending response: %w on error making move: %w", err_response, err)
 		}
@@ -60,6 +62,14 @@ func (h *Human) DoMove(gh GameHandler, conn net.Conn) error {
 
 func (h *Human) GetName() string {
 	return h.Name
+}
+
+func (h *Human) IsHuman() bool {
+	return true
+}
+
+func (h *Human) GetConn() net.Conn {
+	return h.Conn
 }
 
 type AI struct {
@@ -79,4 +89,12 @@ func (a *AI) DoMove(gh GameHandler, conn net.Conn) error {
 
 func (a *AI) GetName() string {
 	return "AI"
+}
+
+func (a *AI) IsHuman() bool {
+	return false
+}
+
+func (a *AI) GetConn() net.Conn {
+	return nil
 }
