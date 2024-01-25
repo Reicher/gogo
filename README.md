@@ -1,2 +1,2 @@
 # gogo
- A go game in go
+ A go game in go. One part is client which opens a TCP connection to a specific port and IP. The other part is a server which can accept connections from players. The first player is put in a waiting spot. When the second player connects a go game is created and random starting colors is choosen. The server sends out a updated game struct to both players and waits for commands from both. Each command that is sent is checked for validity. 

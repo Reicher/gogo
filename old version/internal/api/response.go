@@ -17,8 +17,3 @@ type Response struct {
 	Data string
 	Game *gogame.GoGame
 }
-
-// Marshal a response to a string
-func (r *Response) Marshal() string {
-	return r.Data
-}

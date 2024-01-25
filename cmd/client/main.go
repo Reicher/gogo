@@ -4,63 +4,23 @@ package main
 import (
 	"bufio"
 	"encoding/gob"
-	"encoding/json"
 	"fmt"
 	"gogo/internal/api"
 	"net"
 	"os"
 	"strings"
-	"time"
 )
 
-func send_cmd(conn net.Conn, cmd api.Request) (*api.Response, error) {
+func send_cmd(conn net.Conn, cmd api.Request) error {
 	fmt.Println("Sending request:", cmd)
 
 	// Create a gob encoder and send the request
 	enc := gob.NewEncoder(conn)
 	err := enc.Encode(&cmd)
 	if err != nil {
-		return nil, fmt.Errorf("error encoding request: %w", err)
+		return fmt.Errorf("error encoding request: %w", err)
 	}
-
-	// Create a gob decoder and decode the response
-	dec := gob.NewDecoder(conn)
-	var response api.Response
-	err = dec.Decode(&response)
-	if err != nil {
-		return nil, fmt.Errorf("error decoding response: %w", err)
-	}
-
-	return &response, nil
-}
-
-// create a json-string on the format api.InitRequest (size, player, human_opponent)
-func initialize_game(conn net.Conn, size int, player_name string, human_opponent bool) (response *api.Response, err error) {
-	fmt.Println("Initializing game:", size, player_name, human_opponent)
-
-	// Create an api.InitRequest object
-	initReq := api.InitRequest{
-		Size:          size,
-		Player:        player_name,
-		HumanOpponent: human_opponent,
-	}
-
-	// Serialize the api.InitRequest object to JSON
-	jsonInit, err := json.Marshal(initReq)
-	if err != nil {
-		return nil, fmt.Errorf("error marshalling request: %w", err)
-	}
-
-	// Send the request
-	response, err = send_cmd(conn, api.Request{Type: api.FindGame, Data: string(jsonInit)})
-	if err != nil {
-		return nil, fmt.Errorf("error sending request: %w", err)
-	}
-
-	// Print the response
-	fmt.Println("Response:", response.Data)
-	return response, err
-
+	return nil
 }
 
 func main() {
@@ -72,9 +32,6 @@ func main() {
 	// Initialize the board
 	serverAddr := os.Args[1]
 	playerName := os.Args[2]
-	human_opponent := true
-
-	var response *api.Response
 
 	// Connect to the server
 	conn, err := net.Dial("tcp", serverAddr)
@@ -86,42 +43,59 @@ func main() {
 		defer conn.Close()
 	}
 
-	// Send request to initialize the game
-	response, err = initialize_game(conn, 9, playerName, human_opponent)
+	// Send the player name to the server
+	_, err = conn.Write([]byte(playerName))
 	if err != nil {
-		fmt.Println("Error initializing game:", err)
+		fmt.Println("Error sending player name:", err)
 		os.Exit(1)
 	}
 
+	// Wait for the server to send a response
+	var response *api.Response
+	dec := gob.NewDecoder(conn)
+	err = dec.Decode(&response)
+	if err != nil {
+		fmt.Println("Error decoding response:", err)
+		os.Exit(1)
+	}
+	response.Game.Print()
+
+	go handleGameResponse(conn)
+
+	// Send requests to the server
 	for {
-		fmt.Print("\033[H\033[2J") // clear the screen
-		if response.Type != api.Ok {
-			fmt.Println("Error:", response.Data)
-		}
-		response.Game.Print()
-
 		cmd := get_cmd_from_console()
-		response, err = send_cmd(conn, cmd)
-
-		fmt.Println("Response:", response.Data)
-
+		err = send_cmd(conn, cmd)
 		if err != nil {
 			fmt.Println("Error sending request:", err)
 			os.Exit(1)
 		}
+	}
+}
 
-		// TODO: Add some kind of retry logic here
-		// sleep for a second
-		time.Sleep(1 * time.Second)
+func handleGameResponse(conn net.Conn) {
+	for {
+		dec := gob.NewDecoder(conn)
+		var response api.Response
+		err := dec.Decode(&response)
 
-		// send after game update
-		response, err = send_cmd(conn, api.Request{Type: api.Update})
+		fmt.Print("\033[H\033[2J") // clear the screen
+
 		if err != nil {
-			fmt.Println("Error sending request:", err)
+			fmt.Println("Error decoding response:", err)
 			os.Exit(1)
 		}
-
+		// Check if the response is an error
+		if response.Type == api.Err {
+			fmt.Println("Error:", response.Data)
+			continue
+		}
 		response.Game.Print()
+		fmt.Println("Available requests:")
+		fmt.Println("  Place Stone <row> <column>")
+		fmt.Println("  Pass")
+		fmt.Println("  Resign")
+		fmt.Print("Enter request: ")
 	}
 }
 
@@ -129,7 +103,7 @@ func get_cmd_from_console() api.Request {
 	reader := bufio.NewReader(os.Stdin)
 	for {
 		fmt.Println("Available requests:")
-		fmt.Println("  MakeMove <row> <column>")
+		fmt.Println("  Place Stone <row> <column>")
 		fmt.Println("  Pass")
 		fmt.Println("  Resign")
 		fmt.Print("Enter request: ")
