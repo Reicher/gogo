@@ -5,10 +5,11 @@ import (
 	"bufio"
 	"encoding/gob"
 	"fmt"
-	"gogo/internal/api"
 	"net"
 	"os"
 	"strings"
+
+	"github.com/Reicher/gogo/internal/api"
 )
 
 func send_cmd(conn net.Conn, cmd api.Request) error {
@@ -58,12 +59,12 @@ func main() {
 		fmt.Println("Error decoding response:", err)
 		os.Exit(1)
 	}
-	response.Game.Print()
-
+	fmt.Println(response.Data)
 	go handleGameResponse(conn)
 
 	// Send requests to the server
 	for {
+		response.Game.Print()
 		cmd := get_cmd_from_console()
 		err = send_cmd(conn, cmd)
 		if err != nil {
@@ -73,41 +74,36 @@ func main() {
 	}
 }
 
+func print_cmd_prompt() {
+	fmt.Println("Available requests:")
+	fmt.Println("  Place <row> <column>")
+	fmt.Println("  Pass")
+	fmt.Println("  Resign")
+	fmt.Print("Enter request: ")
+}
+
 func handleGameResponse(conn net.Conn) {
 	for {
 		dec := gob.NewDecoder(conn)
 		var response api.Response
 		err := dec.Decode(&response)
-
 		fmt.Print("\033[H\033[2J") // clear the screen
-
 		if err != nil {
 			fmt.Println("Error decoding response:", err)
-			os.Exit(1)
 		}
 		// Check if the response is an error
 		if response.Type == api.Err {
 			fmt.Println("Error:", response.Data)
-			continue
 		}
 		response.Game.Print()
-		fmt.Println("Available requests:")
-		fmt.Println("  Place Stone <row> <column>")
-		fmt.Println("  Pass")
-		fmt.Println("  Resign")
-		fmt.Print("Enter request: ")
+		print_cmd_prompt()
 	}
 }
 
 func get_cmd_from_console() api.Request {
 	reader := bufio.NewReader(os.Stdin)
 	for {
-		fmt.Println("Available requests:")
-		fmt.Println("  Place Stone <row> <column>")
-		fmt.Println("  Pass")
-		fmt.Println("  Resign")
-		fmt.Print("Enter request: ")
-
+		print_cmd_prompt()
 		input, _ := reader.ReadString('\n')
 		input = strings.TrimSpace(input)
 

@@ -4,10 +4,11 @@ package main
 import (
 	"encoding/gob"
 	"fmt"
-	"gogo/internal/api"
-	"gogo/pkg/gogame"
 	"net"
 	"os"
+
+	"github.com/Reicher/gogo/internal/api"
+	"github.com/Reicher/gogo/pkg/gogame"
 )
 
 // Struct of a client
@@ -23,38 +24,42 @@ type GameHandler struct {
 }
 
 // Add a client to the game, assigning a random color on the first client and the opposite color on the second client
-func (gh *GameHandler) AddClient(c *Client) {
+func (gh *GameHandler) AddClient(c Client) error {
 	// Read the name of the client
 	buf := make([]byte, 1024)
 	n, err := c.conn.Read(buf)
 	if err != nil {
 		fmt.Println("Error reading from client:", err)
-		return
 	}
 	c.name = string(buf[:n])
 
-	fmt.Println("Adding client:", c.name)
+	// print Playername connected
+	fmt.Println(c.name, "connected!")
 
 	// TODO: Not very random
 	if len(gh.players) == 0 {
-		gh.players[gogame.BLACK] = *c
 		c.color = gogame.BLACK
+		gh.players[gogame.BLACK] = c
 	} else {
-		gh.players[gogame.WHITE] = *c
 		c.color = gogame.WHITE
+		gh.players[gogame.WHITE] = c
 		go gh.start()
 	}
+	return nil
 }
 
 // Start the game
 func (gh *GameHandler) start() {
-	fmt.Println("Starting game!")
 
-	// send the board to both players
-	for _, player := range gh.players {
+	gameStartMessage := fmt.Sprintf("Starting game! %s (%s) vs. %s (%s)",
+		gh.players[gogame.BLACK].name, gogame.BLACK,
+		gh.players[gogame.WHITE].name, gogame.WHITE)
+	fmt.Println(gameStartMessage)
+	for color := range gh.players {
+		player := gh.players[color]
 		response := api.Response{
 			Type: api.Game,
-			Data: "Game started!",
+			Data: gameStartMessage,
 			Game: gh.Game,
 		}
 		// Create a new gob encoder with the connection as the output stream
@@ -65,10 +70,8 @@ func (gh *GameHandler) start() {
 		if err != nil {
 			fmt.Println("Error encoding response:", err)
 		}
-		fmt.Println("Sending response:", response)
 
-		// Start a gorutine for the player to handle requests
-		go player.handle(gh.Game)
+		go func(p Client) { p.handle(gh.Game) }(player)
 	}
 }
 
@@ -80,6 +83,7 @@ var waitingClient *Client
 
 // Handle the client and all requests from the client on the game
 func (c *Client) handle(game *gogame.GoGame) {
+	fmt.Println("Starting client rutine:", c.name)
 	for {
 		// wait for a api.request from the client
 		request := api.Request{}
@@ -96,9 +100,30 @@ func (c *Client) handle(game *gogame.GoGame) {
 			// split the data into row and column
 			var row, column int
 			fmt.Sscanf(request.Data, "%d %d", &row, &column)
-			game.MakeMove(c.color, row, column)
+			fmt.Println("Placing ", c.color, " stone at ", row, column)
+			err = game.MakeMove(c.color, row, column)
+
 		default:
 			fmt.Println("Unknown request type:", request.Type)
+		}
+
+		// Check if the request was successful
+		if err != nil {
+			fmt.Println("Error making move:", err)
+			response := api.Response{
+				Type: api.Err,
+				Data: err.Error(),
+				Game: game,
+			}
+			// Create a new gob encoder with the connection as the output stream
+			enc := gob.NewEncoder(c.conn)
+
+			// Encode the response using the gob encoder
+			err := enc.Encode(response)
+			if err != nil {
+				fmt.Println("Error encoding response:", err)
+			}
+			continue
 		}
 
 		// Send the updated game to both players
@@ -121,6 +146,27 @@ func (c *Client) handle(game *gogame.GoGame) {
 	}
 }
 
+// initializeGame initializes a new game, adds a client to it, and returns the created GameHandler.
+func initializeGame(conn net.Conn) error {
+	// Create a GoGame and a GameHandler
+	game := gogame.NewGoGame(9)
+	gameHandler := GameHandler{
+		Game:    game,
+		players: make(map[gogame.StoneColor]Client),
+	}
+
+	// Add a client to the game
+	client := Client{conn: conn}
+	if err := gameHandler.AddClient(client); err != nil {
+		// Close the connection in case of an error
+		conn.Close()
+		return fmt.Errorf("could not add client to game: %w", err)
+	}
+
+	games = append(games, gameHandler)
+	return nil
+}
+
 func main() {
 	// Start listening for connections
 	listener, err := net.Listen("tcp", ":8080")
@@ -136,18 +182,20 @@ func main() {
 		if err != nil {
 			fmt.Println("Error accepting connection:", err)
 		}
+		defer conn.Close()
 		if waitingClient == nil {
-			// Create a go game and add it to games and add the client to the game
+			// Initialize a new game and add the client to it
 			waitingClient = &Client{conn: conn}
-			game := gogame.NewGoGame(9)
-			game_handler := GameHandler{Game: game, players: make(map[gogame.StoneColor]Client)}
-			game_handler.AddClient(waitingClient)
-			games = append(games, game_handler)
+			if err := initializeGame(conn); err != nil {
+				fmt.Println("Error initializing game:", err)
+			}
 		} else {
-			// Add the client to the latest game and start start a new gorutine for the game
-			new_client := &Client{conn: conn}
+			// Add the client to the latest game and start a new goroutine for the game
+			newClient := &Client{conn: conn}
 			game := games[len(games)-1]
-			game.AddClient(new_client)
+			if err = game.AddClient(*newClient); err != nil {
+				fmt.Println("Error adding client to game:", err)
+			}
 			waitingClient = nil
 		}
 	}

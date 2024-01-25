@@ -1,7 +1,7 @@
 package api
 
 import (
-	"gogo/pkg/gogame"
+	"github.com/Reicher/gogo/pkg/gogame"
 )
 
 type ResponseType int

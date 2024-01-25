@@ -25,11 +25,9 @@ func NewGoGame(size int) *GoGame {
 
 // MakeMove makes a move on the Go board.
 func (game *GoGame) MakeMove(color StoneColor, row int, column int) error {
-	fmt.Println("Making move:", color, row, column)
-
-	// Check if it is the players turn
+	// Check if it is the colors turn
 	if game.Turn != color {
-		return fmt.Errorf("not your turn")
+		return fmt.Errorf("Wrong stone color")
 	}
 
 	// Make move
@@ -50,7 +48,7 @@ func (game *GoGame) MakeMove(color StoneColor, row int, column int) error {
 // print the state of the game
 func (game *GoGame) Print() {
 	game.Board.PrintBoard()
-	fmt.Println("\nCurrent turn:", game.Turn)
+	fmt.Println("Current turn:", game.Turn)
 }
 
 func (game *GoGame) GetBoard() GoBoard {
